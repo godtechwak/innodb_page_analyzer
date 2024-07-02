@@ -19,10 +19,6 @@ $ ./main test.ibd 1
 - InnoDB tablespace file: test0.ibd
 - Pages: 43
 
-
-- InnoDB tablespace file: test0.ibd
-- Pages: 43
-
 page_type = File space header(0x0008)                page_num = 0        page_prev = 80300    page_next = 1        record_count = 0        tree_level = 0        index_id = 18446744069414649855
 page_type = Insert buffer bitmap(0x0005)             page_num = 1        page_prev = 0        page_next = 0        record_count = 0        tree_level = 0        index_id = 0
 page_type = Index node(0x0003)                       page_num = 2        page_prev = 0        page_next = 0        record_count = 0        tree_level = 0        index_id = 18446744069414649855
