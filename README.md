@@ -13,6 +13,7 @@ ex-KR) ./main test.ibd 1
 
 Examples
 ===============
+##### ENG Version
 ```
 $ ./main test.ibd 1
 
@@ -63,12 +64,9 @@ page_type = B-tree node(0x45bf)                      page_num = 40       page_pr
 page_type = Freshly allocated page(0x0000)           page_num = 0        page_prev = 0        page_next = 0        record_count = 0        tree_level = 0        index_id = 0
 page_type = Freshly allocated page(0x0000)           page_num = 0        page_prev = 0        page_next = 0        record_count = 0        tree_level = 0        index_id = 0
 ```
+##### KR Version
 ```
 $ ./main test.ibd 1
-
-- InnoDB tablespace file: test0.ibd
-- Pages: 43
-
 
 - InnoDB tablespace file: test0.ibd
 - Pages: 43
