@@ -1,9 +1,9 @@
 package main
 
 import (
-    "encoding/binary"
-    "fmt"
-    "os"
+	"encoding/binary"
+	"fmt"
+	"os"
 )
 
 /*
@@ -82,166 +82,181 @@ constexpr uint32_t FIL_PAGE_SPACE_ID = FIL_PAGE_ARCH_LOG_NO_OR_SPACE_ID;
 const PageSize = 16 * 1024
 
 func parseFile(fileName, pageTypeLang string) {
-    fileInfo, err := os.Stat(fileName)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error getting file info: %v\n", err)
-        return
-    }
+	fileInfo, err := os.Stat(fileName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error getting file info: %v\n", err)
+		return
+	}
 
-    fileSize := fileInfo.Size()
-    if fileSize%PageSize != 0 {
-        fmt.Fprintf(os.Stderr, "File size is not a multiple of PAGE_SIZE\n")
-        return
-    }
+	fileSize := fileInfo.Size()
+	if fileSize%PageSize != 0 {
+		fmt.Fprintf(os.Stderr, "File size is not a multiple of PAGE_SIZE\n")
+		return
+	}
 
-    pageCount := fileSize / PageSize
-    fmt.Printf("\n- InnoDB tablespace file: %s\n", fileName)
-    fmt.Printf("- Pages: %d\n\n", pageCount)
+	pageCount := fileSize / PageSize
+	fmt.Printf("\n- InnoDB tablespace file: %s\n", fileName)
+	fmt.Printf("- Pages: %d\n\n", pageCount)
 
-    file, err := os.Open(fileName)
-    if err != nil {
-        fmt.Fprintf(os.Stderr, "Error opening file: %v\n", err)
-        return
-    }
-    defer file.Close()
+	file, err := os.Open(fileName)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error opening file: %v\n", err)
+		return
+	}
+	defer file.Close()
 
-    for i := int64(0); i < pageCount; i++ {
-        page := make([]byte, PageSize)
-        _, err := file.Read(page)
-        if err != nil {
-            fmt.Fprintf(os.Stderr, "Error reading page: %v\n", err)
-            return
-        }
-        analyzePage(page, pageTypeLang)
-    }
+	for i := int64(0); i < pageCount; i++ {
+		page := make([]byte, PageSize)
+		_, err := file.Read(page)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Error reading page: %v\n", err)
+			return
+		}
+		analyzePage(page, pageTypeLang)
+	}
 }
 
-/* 
-- fil0types.h
-- fil0fil.h 
+func extractTop4Bits(page []byte) uint8 {
+	value := binary.BigEndian.Uint16(page[94:96])
+	fmt.Println(value)
+	top4Bits := uint8(value >> 12)
+
+	return top4Bits
+}
+
+/*
 start of the data on the page
-FIL_PAGE_DATA 38U (38byte)
 */
 func analyzePage(page []byte, pageTypeLang string) {
-    pageTypeMapKr := initPageTypeMapKr()
-    pageTypeMap := initPageTypeMap()
+	pageTypeMapKr := initPageTypeMapKr()
+	pageTypeMap := initPageTypeMap()
 
-    pageType := binary.BigEndian.Uint16(page[24:26])
-    convertPageType := fmt.Sprintf("0x%04x", pageType)
+	//fil0types.h
+	pageNum := int32(binary.BigEndian.Uint32(page[4:8]))    // FIL_PAGE_OFFSET
+	pagePrev := int32(binary.BigEndian.Uint32(page[8:12]))  // FIL_PAGE_PREV
+	pageNext := int32(binary.BigEndian.Uint32(page[12:16])) // FIL_PAGE_NEXT
+	pageType := binary.BigEndian.Uint16(page[24:26])        // FIL_PAGE_TYPE
 
-    selectedMap := selectMap(pageTypeLang, pageTypeMap, pageTypeMapKr)
+	// convert to language
+	convertPageType := fmt.Sprintf("0x%04x", pageType)
+	selectedMap := selectMap(pageTypeLang, pageTypeMap, pageTypeMapKr)
+	pageTypeStr, exists := selectedMap[convertPageType]
+	if !exists {
+		pageTypeStr = "Unknown (" + convertPageType + ")" // 맵에 없는 페이지 유형일 경우
+	}
 
-    pageTypeStr, exists := selectedMap[convertPageType]
-    if !exists {
-        pageTypeStr = "Unknown (" + convertPageType + ")" // 맵에 없는 페이지 유형일 경우
-    }
+	//page0types.h
+	recordCount := binary.BigEndian.Uint16(page[54:56])  // PAGE_N_RECS
+	treeLevel := binary.BigEndian.Uint16(page[64:66])    // PAGE_LEVEL
+	indexId := binary.BigEndian.Uint64(page[66:74])      // PAGE_INDEX_ID
+	garbageSpace := binary.BigEndian.Uint16(page[46:48]) // PAGE_GARBAGE
 
-    pageNum := int32(binary.BigEndian.Uint32(page[4:8]))   // FIL_PAGE_OFFSET
-    pagePrev := int32(binary.BigEndian.Uint32(page[8:12])) // FIL_PAGE_PREV
-    pageNext := int32(binary.BigEndian.Uint32(page[12:16])) // FIL_PAGE_NEXT
-    recordCount := binary.BigEndian.Uint16(page[54:56]) // 
-    treeLevel := binary.BigEndian.Uint16(page[64:66])
-    indexId := binary.BigEndian.Uint64(page[66:74])
-    //RecordType := binary.BigEndian.Uint16(page[95:97]) & 0x7
+	/*
+		subSlice := page[107:109]
+		value := binary.BigEndian.Uint16(subSlice[107:109])
+		top4Bits := uint8(value >> 12)
+		infoFlags := top4Bits // Info Flags
+	*/
 
-    fmt.Printf("page_type = %-40s page_num = %-8d page_prev = %-8d page_next = %-8d record_count = %-8d tree_level = %-8d index_id = %-20d\n",
-        pageTypeStr+"("+fmt.Sprintf("0x%04x", pageType)+")", pageNum, pagePrev, pageNext, recordCount, treeLevel, indexId)
+	fmt.Printf("page_type = %-40s page_num = %-8d page_prev = %-8d page_next = %-8d record_count = %-8d tree_level = %-8d index_id = %-20d garbage_space = %-8d\n",
+		pageTypeStr+"("+fmt.Sprintf("0x%04x", pageType)+")", pageNum, pagePrev, pageNext, recordCount, treeLevel, indexId, garbageSpace)
 }
 
+// fil0fil.h
 func initPageTypeMapKr() map[string]string {
-    return map[string]string{
-        "0x0000": "새로 할당된 페이지", 
-        "0x0001": "미사용 페이지", 
-        "0x0002": "언두 로그 페이지", 
-        "0x0003": "인덱스 노드", 
-        "0x0004": "체인지 버퍼 유휴 목록", 
-        "0x0005": "체인지 버퍼 비트맵", 
-        "0x0006": "시스템 페이지", 
-        "0x0007": "트랜잭션 시스템 데이터", 
-        "0x0008": "테이블 스페이스 헤더", 
-        "0x0009": "익스텐트 디스크립터 페이지", 
-        "0x000A": "압축되지 않은 BLOB 페이지", 
-        "0x000B": "첫 번째 압축된 BLOB 페이지", 
-        "0x000C": "이후 압축된 BLOB 페이지", 
-        "0x000D": "알 수 없는 페이지 타입", 
-        "0x000E": "압축된 페이지", 
-        "0x000F": "암호화된 페이지", 
-        "0x0010": "압축 및 암호화된 페이지", 
-        "0x0011": "암호화된 R-tree 페이지", 
-        "0x0012": "압축되지 않은 SDI BLOB 페이지", 
-        "0x0013": "압축된 SDI BLOB 페이지", 
-        "0x0014": "레거시 더블라이트 버퍼 페이지", 
-        "0x0015": "롤백 세그먼트 배열 페이지", 
-        "0x0016": "압축되지 않은 LOB의 인덱스 페이지", 
-        "0x0017": "압축되지 않은 LOB의 데이터 페이지", 
-        "0x0018": "압축되지 않은 LOB의 첫 번째 페이지", 
-        "0x0019": "압축된 LOB의 첫 번째 페이지", 
-        "0x001A": "압축된 LOB의 데이터 페이지", 
-        "0x001B": "압축된 LOB의 인덱스 페이지", 
-        "0x001C": "압축된 LOB의 조각 페이지", 
-        "0x001D": "조각 페이지의 인덱스 페이지 (압축된 LOB)", 
-        "0x45bf": "인덱스 페이지", 
-        "0x45be": "R-tree 노드", 
-        "0x45bd": "테이블스페이스 SDI 인덱스 페이지", 
-    }
+	return map[string]string{
+		"0x0000": "새로 할당된 페이지",
+		"0x0001": "미사용 페이지",
+		"0x0002": "언두 로그 페이지",
+		"0x0003": "인덱스 노드",
+		"0x0004": "체인지 버퍼 유휴 목록",
+		"0x0005": "체인지 버퍼 비트맵",
+		"0x0006": "시스템 페이지",
+		"0x0007": "트랜잭션 시스템 데이터",
+		"0x0008": "테이블 스페이스 헤더",
+		"0x0009": "익스텐트 디스크립터 페이지",
+		"0x000A": "압축되지 않은 BLOB 페이지",
+		"0x000B": "첫 번째 압축된 BLOB 페이지",
+		"0x000C": "이후 압축된 BLOB 페이지",
+		"0x000D": "알 수 없는 페이지 타입",
+		"0x000E": "압축된 페이지",
+		"0x000F": "암호화된 페이지",
+		"0x0010": "압축 및 암호화된 페이지",
+		"0x0011": "암호화된 R-tree 페이지",
+		"0x0012": "압축되지 않은 SDI BLOB 페이지",
+		"0x0013": "압축된 SDI BLOB 페이지",
+		"0x0014": "레거시 더블라이트 버퍼 페이지",
+		"0x0015": "롤백 세그먼트 배열 페이지",
+		"0x0016": "압축되지 않은 LOB의 인덱스 페이지",
+		"0x0017": "압축되지 않은 LOB의 데이터 페이지",
+		"0x0018": "압축되지 않은 LOB의 첫 번째 페이지",
+		"0x0019": "압축된 LOB의 첫 번째 페이지",
+		"0x001A": "압축된 LOB의 데이터 페이지",
+		"0x001B": "압축된 LOB의 인덱스 페이지",
+		"0x001C": "압축된 LOB의 조각 페이지",
+		"0x001D": "조각 페이지의 인덱스 페이지 (압축된 LOB)",
+		"0x45bf": "인덱스 페이지",
+		"0x45be": "R-tree 노드",
+		"0x45bd": "테이블스페이스 SDI 인덱스 페이지",
+	}
 }
 
 func initPageTypeMap() map[string]string {
-    return map[string]string{
-        "0x0000": "Freshly allocated page", 
-        "0x0001": "Unused page", 
-        "0x0002": "Undo log page", 
-        "0x0003": "Index node", 
-        "0x0004": "Insert buffer free list", 
-        "0x0005": "Insert buffer bitmap", 
-        "0x0006": "System page", 
-        "0x0007": "Transaction system data", 
-        "0x0008": "File space header", 
-        "0x0009": "Extent descriptor page", 
-        "0x000A": "Uncompressed BLOB page", 
-        "0x000B": "First compressed BLOB page", 
-        "0x000C": "Subsequent compressed BLOB page", 
-        "0x000D": "Unknown page", 
-        "0x000E": "Compressed page", 
-        "0x000F": "Encrypted page", 
-        "0x0010": "Compressed and Encrypted page", 
-        "0x0011": "Encrypted R-tree page", 
-        "0x0012": "Uncompressed SDI BLOB page", 
-        "0x0013": "Compressed SDI BLOB page", 
-        "0x0014": "Legacy doublewrite buffer page", 
-        "0x0015": "Rollback Segment Array page", 
-        "0x0016": "Index pages of uncompressed LOB", 
-        "0x0017": "Data pages of uncompressed LOB", 
-        "0x0018": "The first page of an uncompressed LOB", 
-        "0x0019": "The first page of a compressed LOB", 
-        "0x001A": "Data pages of compressed LOB", 
-        "0x001B": "Index pages of compressed LOB", 
-        "0x001C": "Fragment pages of compressed LOB", 
-        "0x001D": "Index pages of fragment pages (compressed LOB)", 
-        "0x45bf": "B-tree node", 
-        "0x45be": "R-tree node", 
-        "0x45bd": "Tablespace SDI Index page", 
-    }
+	return map[string]string{
+		"0x0000": "Freshly allocated page",
+		"0x0001": "Unused page",
+		"0x0002": "Undo log page",
+		"0x0003": "Index node",
+		"0x0004": "Insert buffer free list",
+		"0x0005": "Insert buffer bitmap",
+		"0x0006": "System page",
+		"0x0007": "Transaction system data",
+		"0x0008": "File space header",
+		"0x0009": "Extent descriptor page",
+		"0x000A": "Uncompressed BLOB page",
+		"0x000B": "First compressed BLOB page",
+		"0x000C": "Subsequent compressed BLOB page",
+		"0x000D": "Unknown page",
+		"0x000E": "Compressed page",
+		"0x000F": "Encrypted page",
+		"0x0010": "Compressed and Encrypted page",
+		"0x0011": "Encrypted R-tree page",
+		"0x0012": "Uncompressed SDI BLOB page",
+		"0x0013": "Compressed SDI BLOB page",
+		"0x0014": "Legacy doublewrite buffer page",
+		"0x0015": "Rollback Segment Array page",
+		"0x0016": "Index pages of uncompressed LOB",
+		"0x0017": "Data pages of uncompressed LOB",
+		"0x0018": "The first page of an uncompressed LOB",
+		"0x0019": "The first page of a compressed LOB",
+		"0x001A": "Data pages of compressed LOB",
+		"0x001B": "Index pages of compressed LOB",
+		"0x001C": "Fragment pages of compressed LOB",
+		"0x001D": "Index pages of fragment pages (compressed LOB)",
+		"0x45bf": "B-tree node",
+		"0x45be": "R-tree node",
+		"0x45bd": "Tablespace SDI Index page",
+	}
 }
 
 func selectMap(pageTypeLang string, pageTypeMap, pageTypeMapKr map[string]string) map[string]string {
-    if pageTypeLang == "1" {
-        return pageTypeMapKr
-    }
-    return pageTypeMap
+	if pageTypeLang == "1" {
+		return pageTypeMapKr
+	}
+	return pageTypeMap
 }
 
 func main() {
-    if len(os.Args) < 2 {
-        fmt.Fprintf(os.Stderr, "Usage: %s <filename> [pageTypeLang]\n", os.Args[0])
-        return
-    }
+	if len(os.Args) < 2 {
+		fmt.Fprintf(os.Stderr, "Usage: %s <filename> [pageTypeLang]\n", os.Args[0])
+		return
+	}
 
-    fileName := os.Args[1]
-    pageTypeLang := "0"
-    if len(os.Args) >= 3 {
-        pageTypeLang = os.Args[2]
-    }
+	fileName := os.Args[1]
+	pageTypeLang := "0"
+	if len(os.Args) >= 3 {
+		pageTypeLang = os.Args[2]
+	}
 
-    parseFile(fileName, pageTypeLang)
+	parseFile(fileName, pageTypeLang)
 }
